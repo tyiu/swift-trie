@@ -41,6 +41,25 @@ public class Trie<V: Hashable> {
     public init() { }
 }
 
+/// The transformation options that can be applied to the original key when inserting a value into a trie
+/// as additional keys that map to the value.
+public struct TrieInsertionOptions: OptionSet {
+    public let rawValue: Int
+
+    public init(rawValue: Int) {
+        self.rawValue = rawValue
+    }
+
+    /// Inserts all permutations of non-prefixed substring versions of the original key.
+    public static let includeNonPrefixedMatches = TrieInsertionOptions(rawValue: 1 << 0)
+
+    /// Inserts the localized lowercase version of the original key.
+    public static let includeCaseInsensitiveMatches = TrieInsertionOptions(rawValue: 1 << 1)
+
+    /// Inserts the original key with all diactritics removed.
+    public static let includeDiacriticsInsensitiveMatches = TrieInsertionOptions(rawValue: 1 << 2)
+}
+
 public extension Trie {
     /// Finds the branch that matches the specified key and returns the values from all of its descendant nodes.
     /// Note: If `key` is an empty string, all values are returned.
@@ -75,6 +94,7 @@ public extension Trie {
         return Array(currentNode.exactMatchValues) + (substringMatches.subtracting(currentNode.exactMatchValues))
     }
 
+    // swiftlint:disable cyclomatic_complexity
     /// Inserts a value into this trie for the specified key.
     /// This function stores all substring endings of the key, not only the key itself.
     /// Runtime performance is O(n^2) and storage cost is O(n), where n is the number of characters in the key.
@@ -82,40 +102,69 @@ public extension Trie {
     /// - Parameters:
     ///   - key: The key to insert that maps to `value`.
     ///   - value: The value that is mapped from `key`.
-    ///   - includeNonPrefixedMatches: Whether the key and value should be inserted to allow for non-prefixed matches.
-    ///                                By default, it is `false`. If it is `true`, more memory will be used.
-    func insert(key: String, value: V, includeNonPrefixedMatches: Bool = false) {
-        // Create root branches for each character of the key to enable substring searches
-        // instead of only just prefix searches.
-        // Hence the nested loop.
-        for keyIndex in 0..<key.count {
-            var currentNode = self
+    ///   - options: The options to apply different transformations to `key` for additional insertion.
+    /// - Returns: The list of whole keys that were inserted that map to `value`.
+    func insert(key originalKey: String, value: V, options: TrieInsertionOptions = []) -> [String] {
+        let includeNonPrefixedMatches = options.contains(.includeNonPrefixedMatches)
+        let includeCaseInsensitiveMatches = options.contains(.includeCaseInsensitiveMatches)
+        let includeDiacriticsInsensitiveMatches = options.contains(.includeDiacriticsInsensitiveMatches)
 
-            // Find branch with matching prefix.
-            for char in key[key.index(key.startIndex, offsetBy: keyIndex)...] {
-                if let child = currentNode.children[char] {
-                    currentNode = child
-                } else {
-                    let child = Trie()
-                    child.parent = currentNode
-                    currentNode.children[char] = child
-                    currentNode = child
-                }
-            }
-
-            if keyIndex == 0 {
-                currentNode.exactMatchValues.insert(value)
-
-                // If includeNonPrefixedMatches is true, the first character of the key can be the only root branch
-                // and we terminate the loop early.
-                if !includeNonPrefixedMatches {
-                    return
-                }
-            } else {
-                currentNode.substringMatchValues.insert(value)
+        var keys = [originalKey]
+        if includeCaseInsensitiveMatches {
+            let localizedLowercase = originalKey.localizedLowercase
+            if localizedLowercase != originalKey {
+                keys.append(localizedLowercase)
             }
         }
+        if includeDiacriticsInsensitiveMatches,
+           let keyWithoutDiacritics = originalKey.applyingTransform(.stripDiacritics, reverse: false),
+           keyWithoutDiacritics != originalKey {
+            keys.append(keyWithoutDiacritics)
+
+            if includeCaseInsensitiveMatches {
+                let localizedLowercaseWithoutDiacritics = keyWithoutDiacritics.localizedLowercase
+                if localizedLowercaseWithoutDiacritics != originalKey {
+                    keys.append(localizedLowercaseWithoutDiacritics)
+                }
+            }
+        }
+
+        for key in keys {
+            // Create root branches for each character of the key to enable substring searches
+            // instead of only just prefix searches.
+            // Hence the nested loop.
+            for keyIndex in 0..<key.count {
+                var currentNode = self
+
+                // Find branch with matching prefix.
+                for char in key[key.index(key.startIndex, offsetBy: keyIndex)...] {
+                    if let child = currentNode.children[char] {
+                        currentNode = child
+                    } else {
+                        let child = Trie()
+                        child.parent = currentNode
+                        currentNode.children[char] = child
+                        currentNode = child
+                    }
+                }
+
+                if keyIndex == 0 {
+                    currentNode.exactMatchValues.insert(value)
+
+                    // If includeNonPrefixedMatches is true, the first character of the key can be the only root branch
+                    // and we terminate the loop early.
+                    if !includeNonPrefixedMatches {
+                        break
+                    }
+                } else {
+                    currentNode.substringMatchValues.insert(value)
+                }
+            }
+        }
+
+        return keys
     }
+    // swiftlint:enable cyclomatic_complexity
 
     /// Removes a value from this trie for the specified key.
     /// - Parameters:
