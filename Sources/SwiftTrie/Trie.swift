@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import OrderedCollections
 
 /// Trie is a tree data structure of all the substring permutations of a collection of strings
 /// optimized for searching for values of type V.
@@ -22,11 +23,11 @@ import Foundation
 ///
 /// See the article on [Trie](https://en.wikipedia.org/wiki/Trie) on Wikipedia.
 public class Trie<V: Hashable> {
-    private var children: [Character: Trie] = [:]
+    private var children = OrderedDictionary<Character, Trie>()
 
     /// Separate exact matches from strict substrings so that exact matches appear first in returned results.
-    private var exactMatchValues = Set<V>()
-    private var substringMatchValues = Set<V>()
+    private var exactMatchValues = OrderedSet<V>()
+    private var substringMatchValues = OrderedSet<V>()
 
     private var parent: Trie?
 
@@ -79,7 +80,7 @@ public extension Trie {
         }
 
         // Perform breadth-first search from matching branch and collect values from all descendants.
-        var substringMatches = Set<V>(currentNode.substringMatchValues)
+        var substringMatches = OrderedSet<V>(currentNode.substringMatchValues)
         var queue = Array(currentNode.children.values)
 
         while !queue.isEmpty {
@@ -149,7 +150,7 @@ public extension Trie {
                 }
 
                 if keyIndex == 0 {
-                    currentNode.exactMatchValues.insert(value)
+                    currentNode.exactMatchValues.append(value)
 
                     // If includeNonPrefixedMatches is true, the first character of the key can be the only root branch
                     // and we terminate the loop early.
@@ -157,7 +158,7 @@ public extension Trie {
                         break
                     }
                 } else {
-                    currentNode.substringMatchValues.insert(value)
+                    currentNode.substringMatchValues.append(value)
                 }
             }
         }
